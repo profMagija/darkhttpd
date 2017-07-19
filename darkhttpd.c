@@ -38,21 +38,21 @@ static const int debug = 1;
 #endif
 
 #include <sys/types.h>
-#include <sys/socket.h>
+/*#include <sys/socket.h>*/
 #include <sys/stat.h>
-#include <sys/resource.h>
-#include <sys/wait.h>
+/*#include <sys/resource.h>*/
+/*#include <sys/wait.h>*/
 #include <sys/param.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
+/*#include <netinet/in.h>*/
+/*#include <netinet/tcp.h>*/
+/*#include <arpa/inet.h>*/
 #include <assert.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <grp.h>
-#include <pwd.h>
+/*#include <grp.h>*/
+/*#include <pwd.h>*/
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -60,6 +60,58 @@ static const int debug = 1;
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+
+
+////////////////// PORT CODE /////////////////
+
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <stdint.h>
+#include <windows.h>
+
+#define MAXNAMLEN 64
+
+typedef int in_addr_t;
+typedef int uid_t;
+typedef int gid_t;
+
+int vasprintf(char **strp, const char *fmt, va_list ap)
+{
+  int r = -1, size;
+
+  va_list ap2;
+  va_copy(ap2, ap);
+
+  size = vsnprintf(0, 0, fmt, ap2);
+
+  if ((size >= 0) && (size < INT_MAX))
+  {
+    *strp = (char *)malloc(size+1); //+1 for null
+    if (*strp)
+    {
+      r = vsnprintf(*strp, size+1, fmt, ap);  //+1 for null
+      if ((r < 0) || (r > size))
+      {
+        free(*strp);
+        *strp = 0;
+        r = -1;
+      }
+    }
+  }
+  else { *strp = 0; }
+
+  va_end(ap2);
+
+  return(r);
+}
+
+int getuid() { return 0; }
+int getgid() { return 0; }
+
+
+//////////////// END PORT CODE ///////////////
+
 
 #ifdef __sun__
 #ifndef INADDR_NONE
@@ -110,7 +162,8 @@ static void err(const int code, const char *format, ...) {
     va_start(va, format);
     fprintf(stderr, "error: ");
     vfprintf(stderr, format, va);
-    fprintf(stderr, ": %s\n", strerror(errno));
+    fprintf(stderr, ": %s", strerror(errno));
+    fprintf(stderr, ": %s\n", WSAGetLastError());
     va_end(va);
     exit(code);
 }
@@ -318,6 +371,12 @@ static void xclose(const int fd) {
         err(1, "close()");
 }
 
+static void xclosesocket(const int fd) {
+    if (closesocket(fd) != 0) {
+        err(1, "closesocket()");
+    }
+}
+
 /* malloc that dies if it can't allocate. */
 static void *xmalloc(const size_t size) {
     void *ptr = malloc(size);
@@ -433,13 +492,15 @@ static void appendf(struct apbuf *buf, const char *format, ...) {
 
 /* Make the specified socket non-blocking. */
 static void nonblock_socket(const int sock) {
-    int flags = fcntl(sock, F_GETFL, NULL);
+    /*int flags = fcntl(sock, F_GETFL, NULL);*/
 
-    if (flags == -1)
-        err(1, "fcntl(F_GETFL)");
-    flags |= O_NONBLOCK;
-    if (fcntl(sock, F_SETFL, flags) == -1)
-        err(1, "fcntl() to set O_NONBLOCK");
+    /*if (flags == -1)*/
+        /*err(1, "fcntl(F_GETFL)");*/
+    /*flags |= O_NONBLOCK;*/
+    /*if (fcntl(sock, F_SETFL, flags) == -1)*/
+        /*err(1, "fcntl() to set O_NONBLOCK");*/
+    u_long ul = 1;
+    ioctlsocket(sock, FIONBIO, &ul);
 }
 
 /* Split string out of src with range [left:right-1] */
@@ -780,7 +841,7 @@ static const char *url_content_type(const char *url) {
  */
 static void init_sockin(void) {
     struct sockaddr_in addrin;
-    int sockopt;
+    char sockopt;
 
     /* create incoming socket */
     sockin = socket(PF_INET, SOCK_STREAM, 0);
@@ -948,31 +1009,31 @@ static void parse_commandline(const int argc, char *argv[]) {
                 errx(1, "missing filename after --mimetypes");
             parse_extension_map_file(argv[i]);
         }
-        else if (strcmp(argv[i], "--uid") == 0) {
-            struct passwd *p;
-            int num;
-            if (++i >= argc)
-                errx(1, "missing uid after --uid");
-            p = getpwnam(argv[i]);
-            if ((p == NULL) && (str_to_num(argv[i], &num)))
-                p = getpwuid( (uid_t)num );
+        //else if (strcmp(argv[i], "--uid") == 0) {
+            //struct passwd *p;
+            //int num;
+            //if (++i >= argc)
+                //errx(1, "missing uid after --uid");
+            //p = getpwnam(argv[i]);
+            //if ((p == NULL) && (str_to_num(argv[i], &num)))
+                //p = getpwuid( (uid_t)num );
 
-            if (p == NULL)
-                errx(1, "no such uid: `%s'", argv[i]);
-            drop_uid = p->pw_uid;
-        }
-        else if (strcmp(argv[i], "--gid") == 0) {
-            struct group *g;
-            int num;
-            if (++i >= argc)
-                errx(1, "missing gid after --gid");
-            g = getgrnam(argv[i]);
-            if ((g == NULL) && (str_to_num(argv[i], &num)))
-                g = getgrgid((gid_t)num);
-            if (g == NULL)
-                errx(1, "no such gid: `%s'", argv[i]);
-            drop_gid = g->gr_gid;
-        }
+            //if (p == NULL)
+                //errx(1, "no such uid: `%s'", argv[i]);
+            //drop_uid = p->pw_uid;
+        //}
+        //else if (strcmp(argv[i], "--gid") == 0) {
+            //struct group *g;
+            //int num;
+            //if (++i >= argc)
+                //errx(1, "missing gid after --gid");
+            //g = getgrnam(argv[i]);
+            //if ((g == NULL) && (str_to_num(argv[i], &num)))
+                //g = getgrgid((gid_t)num);
+            //if (g == NULL)
+                //errx(1, "no such gid: `%s'", argv[i]);
+            //drop_gid = g->gr_gid;
+        //}
         else if (strcmp(argv[i], "--pidfile") == 0) {
             if (++i >= argc)
                 errx(1, "missing filename after --pidfile");
@@ -1138,7 +1199,7 @@ static void log_connection(const struct connection *conn) {
 static void free_connection(struct connection *conn) {
     if (debug) printf("free_connection(%d)\n", conn->socket);
     log_connection(conn);
-    if (conn->socket != -1) xclose(conn->socket);
+    if (conn->socket != -1) xclosesocket(conn->socket);
     if (conn->request != NULL) free(conn->request);
     if (conn->method != NULL) free(conn->method);
     if (conn->url != NULL) free(conn->url);
@@ -1727,7 +1788,7 @@ static void process_get(struct connection *conn) {
                conn->url, target, mimetype);
 
     /* open file */
-    conn->reply_fd = open(target, O_RDONLY | O_NONBLOCK);
+    conn->reply_fd = open(target, O_RDONLY);
     free(target);
 
     if (conn->reply_fd == -1) {
@@ -2041,20 +2102,21 @@ static ssize_t send_from_file(const int s, const int fd,
     else
         return size;
 #else
-#if defined(__linux) || defined(__sun__)
+#if defined(__linux) || defined(__sun__) || 1
     /* Limit truly ridiculous (LARGEFILE) requests. */
     if (size > 1<<20)
         size = 1<<20;
     return sendfile(s, fd, &ofs, size);
 #else
-
     char buf[1<<15];
     size_t amount = min(sizeof(buf), size);
-    ssize_t numread;
+    ssize_t numread = 0;
+
 
     if (lseek(fd, ofs, SEEK_SET) == -1)
         err(1, "fseek(%d)", (int)ofs);
-    numread = read(fd, buf, amount);
+    while (!(numread = read(fd, buf, amount)));
+
     if (numread == 0) {
         fprintf(stderr, "premature eof on fd %d\n", fd);
         return -1;
@@ -2063,13 +2125,13 @@ static ssize_t send_from_file(const int s, const int fd,
         fprintf(stderr, "error reading on fd %d: %s", fd, strerror(errno));
         return -1;
     }
-    else if ((size_t)numread != amount) {
-        fprintf(stderr, "read %d bytes, expecting %u bytes on fd %d\n",
-            numread, amount, fd);
-        return -1;
-    }
+    /*else if ((size_t)numread != amount) {*/
+        /*fprintf(stderr, "read %d bytes, expecting %u bytes on fd %d\n",*/
+            /*numread, amount, fd);*/
+        /*return -1;*/
+    /*}*/
     else
-        return send(s, buf, amount, 0);
+        return send(s, buf, numread, 0);
 #endif
 #endif
 }
@@ -2240,64 +2302,64 @@ static void httpd_poll(void) {
 
 /* Daemonize helpers. */
 #define PATH_DEVNULL "/dev/null"
-static int lifeline[2] = { -1, -1 };
+static PHANDLE lifeline[2] = { NULL, NULL };
 static int fd_null = -1;
 
 static void daemonize_start(void) {
-    pid_t f, w;
+    /*pid_t f, w;*/
 
-    if (pipe(lifeline) == -1)
-        err(1, "pipe(lifeline)");
+    /*if (pipe(lifeline) == -1)*/
+        /*err(1, "pipe(lifeline)");*/
 
-    fd_null = open(PATH_DEVNULL, O_RDWR, 0);
-    if (fd_null == -1)
-        err(1, "open(" PATH_DEVNULL ")");
+    /*fd_null = open(PATH_DEVNULL, O_RDWR, 0);*/
+    /*if (fd_null == -1)*/
+        /*err(1, "open(" PATH_DEVNULL ")");*/
 
-    f = fork();
-    if (f == -1)
-        err(1, "fork");
-    else if (f != 0) {
-        /* parent: wait for child */
-        char tmp[1];
-        int status;
+    /*f = fork();*/
+    /*if (f == -1)*/
+        /*err(1, "fork");*/
+    /*else if (f != 0) {*/
+        /*[> parent: wait for child <]*/
+        /*char tmp[1];*/
+        /*int status;*/
 
-        if (close(lifeline[1]) == -1)
-            warn("close lifeline in parent");
-        if (read(lifeline[0], tmp, sizeof(tmp)) == -1)
-            warn("read lifeline in parent");
-        w = waitpid(f, &status, WNOHANG);
-        if (w == -1)
-            err(1, "waitpid");
-        else if (w == 0)
-            /* child is running happily */
-            exit(EXIT_SUCCESS);
-        else
-            /* child init failed, pass on its exit status */
-            exit(WEXITSTATUS(status));
-    }
-    /* else we are the child: continue initializing */
+        /*if (close(lifeline[1]) == -1)*/
+            /*warn("close lifeline in parent");*/
+        /*if (read(lifeline[0], tmp, sizeof(tmp)) == -1)*/
+            /*warn("read lifeline in parent");*/
+        /*w = waitpid(f, &status, WNOHANG);*/
+        /*if (w == -1)*/
+            /*err(1, "waitpid");*/
+        /*else if (w == 0)*/
+            /*[> child is running happily <]*/
+            /*exit(EXIT_SUCCESS);*/
+        /*else*/
+            /*[> child init failed, pass on its exit status <]*/
+            /*exit(WEXITSTATUS(status));*/
+    /*}*/
+    /*[> else we are the child: continue initializing <]*/
 }
 
 static void daemonize_finish(void) {
-    if (fd_null == -1)
-        return; /* didn't daemonize_start() so we're not daemonizing */
+    /*if (fd_null == -1)*/
+        /*return; [> didn't daemonize_start() so we're not daemonizing <]*/
 
-    if (setsid() == -1)
-        err(1, "setsid");
-    if (close(lifeline[0]) == -1)
-        warn("close read end of lifeline in child");
-    if (close(lifeline[1]) == -1)
-        warn("couldn't cut the lifeline");
+    /*if (setsid() == -1)*/
+        /*err(1, "setsid");*/
+    /*if (close(lifeline[0]) == -1)*/
+        /*warn("close read end of lifeline in child");*/
+    /*if (close(lifeline[1]) == -1)*/
+        /*warn("couldn't cut the lifeline");*/
 
-    /* close all our std fds */
-    if (dup2(fd_null, STDIN_FILENO) == -1)
-        warn("dup2(stdin)");
-    if (dup2(fd_null, STDOUT_FILENO) == -1)
-        warn("dup2(stdout)");
-    if (dup2(fd_null, STDERR_FILENO) == -1)
-        warn("dup2(stderr)");
-    if (fd_null > 2)
-        close(fd_null);
+    /*[> close all our std fds <]*/
+    /*if (dup2(fd_null, STDIN_FILENO) == -1)*/
+        /*warn("dup2(stdin)");*/
+    /*if (dup2(fd_null, STDOUT_FILENO) == -1)*/
+        /*warn("dup2(stdout)");*/
+    /*if (dup2(fd_null, STDERR_FILENO) == -1)*/
+        /*warn("dup2(stderr)");*/
+    /*if (fd_null > 2)*/
+        /*close(fd_null);*/
 }
 
 /* [<-] pidfile helpers, based on FreeBSD src/lib/libutil/pidfile.c,v 1.3
@@ -2341,9 +2403,9 @@ static void pidfile_create(void) {
 
     /* Open the PID file and obtain exclusive lock. */
     fd = open(pidfile_name,
-        O_WRONLY | O_CREAT | O_EXLOCK | O_TRUNC | O_NONBLOCK, PIDFILE_MODE);
+        O_WRONLY | O_CREAT | O_EXLOCK | O_TRUNC, PIDFILE_MODE);
     if (fd == -1) {
-        if ((errno == EWOULDBLOCK) || (errno == EEXIST))
+        if ((errno == EEXIST))
             errx(1, "daemon already running with PID %d", pidfile_read());
         else
             err(1, "can't create pidfile %s", pidfile_name);
@@ -2358,7 +2420,7 @@ static void pidfile_create(void) {
     }
 
     snprintf(pidstr, sizeof(pidstr), "%u", getpid());
-    if (pwrite(fd, pidstr, strlen(pidstr), 0) != (ssize_t)strlen(pidstr)) {
+    if (write(fd, pidstr, strlen(pidstr)) != (ssize_t)strlen(pidstr)) {
         error = errno;
         pidfile_remove();
         errno = error;
@@ -2370,11 +2432,20 @@ static void pidfile_create(void) {
 /* Close all sockets and FILEs and exit. */
 static void stop_running(int sig) {
     running = 0;
-    fprintf(stderr, "\ncaught signal %s, stopping\n", strsignal(sig));
+    fprintf(stderr, "\ncaught signal %d, stopping\n", sig);
+    exit(0);
 }
 
 /* Execution starts here. */
 int main(int argc, char **argv) {
+
+    WSADATA wsaData;
+    int iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
+    if (iResult != 0) {
+        printf("WSAStartup failed: %d\n", iResult);
+        return 1;
+    }
+
     printf("%s, %s.\n", pkgname, copyright);
     parse_default_extension_map();
     parse_commandline(argc, argv);
@@ -2398,33 +2469,33 @@ int main(int argc, char **argv) {
         daemonize_start();
 
     /* signals */
-    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
-        err(1, "signal(ignore SIGPIPE)");
+    /*if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)*/
+        /*err(1, "signal(ignore SIGPIPE)");*/
     if (signal(SIGINT, stop_running) == SIG_ERR)
         err(1, "signal(SIGINT)");
     if (signal(SIGTERM, stop_running) == SIG_ERR)
         err(1, "signal(SIGTERM)");
 
     /* security */
-    if (want_chroot) {
-        tzset(); /* read /etc/localtime before we chroot */
-        if (chdir(wwwroot) == -1)
-            err(1, "chdir(%s)", wwwroot);
-        if (chroot(wwwroot) == -1)
-            err(1, "chroot(%s)", wwwroot);
-        printf("chrooted to `%s'\n", wwwroot);
-        wwwroot[0] = '\0'; /* empty string */
-    }
-    if (drop_gid != INVALID_GID) {
-        if (setgid(drop_gid) == -1)
-            err(1, "setgid(%d)", drop_gid);
-        printf("set gid to %d\n", drop_gid);
-    }
-    if (drop_uid != INVALID_UID) {
-        if (setuid(drop_uid) == -1)
-            err(1, "setuid(%d)", drop_uid);
-        printf("set uid to %d\n", drop_uid);
-    }
+    /*if (want_chroot) {*/
+        /*tzset(); [> read /etc/localtime before we chroot <]*/
+        /*if (chdir(wwwroot) == -1)*/
+            /*err(1, "chdir(%s)", wwwroot);*/
+        /*if (chroot(wwwroot) == -1)*/
+            /*err(1, "chroot(%s)", wwwroot);*/
+        /*printf("chrooted to `%s'\n", wwwroot);*/
+        /*wwwroot[0] = '\0'; [> empty string <]*/
+    /*}*/
+    /*if (drop_gid != INVALID_GID) {*/
+        /*if (setgid(drop_gid) == -1)*/
+            /*err(1, "setgid(%d)", drop_gid);*/
+        /*printf("set gid to %d\n", drop_gid);*/
+    /*}*/
+    /*if (drop_uid != INVALID_UID) {*/
+        /*if (setuid(drop_uid) == -1)*/
+            /*err(1, "setuid(%d)", drop_uid);*/
+        /*printf("set uid to %d\n", drop_uid);*/
+    /*}*/
 
     /* create pidfile */
     if (pidfile_name) pidfile_create();
@@ -2464,19 +2535,19 @@ int main(int argc, char **argv) {
     }
 
     /* usage stats */
-    {
-        struct rusage r;
+    /*{*/
+        /*struct rusage r;*/
 
-        getrusage(RUSAGE_SELF, &r);
-        printf("CPU time used: %u.%02u user, %u.%02u system\n",
-            (unsigned int)r.ru_utime.tv_sec,
-                (unsigned int)(r.ru_utime.tv_usec/10000),
-            (unsigned int)r.ru_stime.tv_sec,
-                (unsigned int)(r.ru_stime.tv_usec/10000)
-        );
-        printf("Requests: %llu\n", llu(num_requests));
-        printf("Bytes: %llu in, %llu out\n", llu(total_in), llu(total_out));
-    }
+        /*getrusage(RUSAGE_SELF, &r);*/
+        /*printf("CPU time used: %u.%02u user, %u.%02u system\n",*/
+            /*(unsigned int)r.ru_utime.tv_sec,*/
+                /*(unsigned int)(r.ru_utime.tv_usec/10000),*/
+            /*(unsigned int)r.ru_stime.tv_sec,*/
+                /*(unsigned int)(r.ru_stime.tv_usec/10000)*/
+        /*);*/
+        /*printf("Requests: %llu\n", llu(num_requests));*/
+        /*printf("Bytes: %llu in, %llu out\n", llu(total_in), llu(total_out));*/
+    /*}*/
 
     return 0;
 }
